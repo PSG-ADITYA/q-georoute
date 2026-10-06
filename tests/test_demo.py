@@ -151,6 +151,19 @@ class TestDemo(unittest.TestCase):
         arr = demo.np.arange(3)
         self.assertEqual(len(arr), 3)
 
+    def test_create_three_topologies_figure(self):
+        """Verify that create_three_topologies_figure builds a 1x3 subplot figure and base64 string."""
+        import matplotlib.pyplot as plt
+        from src.demo import create_three_topologies_figure, render_three_topologies_base64
+
+        fig = create_three_topologies_figure()
+        self.assertEqual(len(fig.axes), 3)
+        plt.close(fig)
+
+        b64 = render_three_topologies_base64()
+        self.assertIsInstance(b64, str)
+        self.assertGreater(len(b64), 1000)
+
 
 if __name__ == "__main__":
     unittest.main()

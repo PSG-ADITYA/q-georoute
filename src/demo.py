@@ -369,6 +369,121 @@ def render_topology_base64(topology: Topology) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
+def create_three_topologies_figure(
+    figsize: Tuple[float, float] = (11.5, 3.0),
+    dpi: int = 100,
+) -> plt.Figure:
+    """
+    Generates a compact 1x3 side-by-side Matplotlib figure displaying all three
+    official processor architectures, highlighting their official source, target,
+    and actual shortest routing path.
+
+    Visualizes:
+    Processor Geometry -> Routing Path -> Graph Distance -> SWAP Overhead
+    """
+    topos = get_all_topologies()
+    fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
+
+    for idx, (name, topo) in enumerate(topos.items()):
+        ax = axes[idx]
+        g = topo.graph
+        pos = topo.pos
+        path = topo.shortest_path()
+        path_edges = list(zip(path[:-1], path[1:]))
+        hops = len(path) - 1
+        swaps = 2 * (hops - 1)
+
+        # Base coupling edges
+        nx.draw_networkx_edges(
+            g, pos,
+            ax=ax,
+            edge_color="#94a3b8",
+            width=1.4,
+            alpha=0.6,
+        )
+
+        # Highlighted routing path edges
+        nx.draw_networkx_edges(
+            g, pos,
+            edgelist=path_edges,
+            ax=ax,
+            edge_color="#e41a1c",
+            width=2.8,
+            alpha=0.9,
+        )
+
+        # Node coloring: Source (green), Target (magenta), Intermediate route (orange), Idle (slate)
+        node_colors = []
+        for node in g.nodes():
+            if node == topo.source:
+                node_colors.append("#2ca02c")
+            elif node == topo.destination:
+                node_colors.append("#e7298a")
+            elif node in path:
+                node_colors.append("#fd8d3c")
+            else:
+                node_colors.append("#cbd5e1")
+
+        node_size = 360 if topo.num_qubits <= 14 else 300
+        nx.draw_networkx_nodes(
+            g, pos,
+            ax=ax,
+            node_color=node_colors,
+            node_size=node_size,
+            edgecolors="#1e293b",
+            linewidths=1.2,
+        )
+
+        nx.draw_networkx_labels(
+            g, pos,
+            ax=ax,
+            font_size=7.5,
+            font_weight="bold",
+            font_color="#0f172a",
+        )
+
+        path_str = " → ".join(f"Q{n}" for n in path)
+        ax.set_title(
+            f"{name} ({topo.num_qubits}Q)\nOfficial Endpoints: Q{topo.source} → Q{topo.destination}",
+            fontsize=9,
+            fontweight="bold",
+            color="#0f172a",
+            pad=4,
+        )
+        ax.text(
+            0.5, -0.04,
+            f"Path: {path_str}\nHops: {hops}  |  SWAPs: {swaps}",
+            transform=ax.transAxes,
+            ha="center",
+            va="top",
+            fontsize=8.5,
+            fontweight="bold",
+            color="#1e293b",
+            bbox=dict(boxstyle="round,pad=0.25", facecolor="#f8fafc", edgecolor="#cbd5e1", lw=0.8),
+        )
+        ax.axis("off")
+
+    custom_lines = [
+        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="#2ca02c", markersize=7, label="Source"),
+        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="#e7298a", markersize=7, label="Target"),
+        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="#fd8d3c", markersize=7, label="Route Qubits"),
+        plt.Line2D([0], [0], color="#e41a1c", lw=2.2, label="Shortest Path"),
+        plt.Line2D([0], [0], color="#94a3b8", lw=1.2, label="Coupling Edge"),
+    ]
+    fig.legend(handles=custom_lines, loc="lower center", bbox_to_anchor=(0.5, 0.0), ncol=5, fontsize=7.5, frameon=False)
+    fig.tight_layout(rect=[0, 0.06, 1, 1])
+    return fig
+
+
+def render_three_topologies_base64() -> str:
+    """Renders the 1x3 three-topologies comparison figure to a Base64 PNG string."""
+    fig = create_three_topologies_figure(figsize=(11.5, 3.0), dpi=100)
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    plt.close(fig)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
 # ==============================================================================
 # MODE 2: OFFICIAL 9-CASE BENCHMARK EXECUTION & PLOTTING
 # ==============================================================================
@@ -734,6 +849,35 @@ def run_gui() -> None:
         pady=6,
     )
     bench_status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(12, 0))
+
+    # Architecture & Routing Section (Compact side-by-side diagrams of 3 topologies)
+    arch_frame = tk.LabelFrame(
+        tab_benchmark,
+        text=" Architecture & Routing ",
+        font=("Helvetica", 10, "bold"),
+        bg="#ffffff",
+        fg="#1e293b",
+        padx=6,
+        pady=2,
+        relief=tk.RIDGE,
+        bd=1,
+    )
+    arch_frame.pack(fill=tk.X, padx=8, pady=(4, 4))
+
+    arch_subtitle = tk.Label(
+        arch_frame,
+        text="Processor Geometry  →  Routing Path  →  Graph Distance  →  SWAP Overhead",
+        font=("Helvetica", 8, "bold"),
+        fg="#2563eb",
+        bg="#ffffff",
+    )
+    arch_subtitle.pack(anchor="w", padx=4, pady=(0, 2))
+
+    fig_arch = create_three_topologies_figure(figsize=(11.0, 2.1), dpi=95)
+    canvas_arch = FigureCanvasTkAgg(fig_arch, master=arch_frame)
+    canvas_arch.draw()
+    canvas_arch.get_tk_widget().pack(fill=tk.X, expand=True)
+    plt.close(fig_arch)
 
     # Split: Benchmark Table (Left/Top) & Comparison Charts (Right/Bottom)
     bench_split = tk.PanedWindow(tab_benchmark, orient=tk.VERTICAL, bg="#e2e8f0", sashwidth=4)
@@ -1323,6 +1467,17 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
         <!-- VIEW 2: OFFICIAL 9-CASE BENCHMARK         -->
         <!-- ========================================== -->
         <div id="view-benchmark" style="display:none;">
+            <!-- Architecture & Routing Section -->
+            <div class="card" style="margin-bottom: 20px;">
+                <h2 style="font-size: 16px; margin-bottom: 4px;">Architecture &amp; Routing</h2>
+                <div style="font-size: 12px; font-weight: 600; color: var(--accent-blue); margin-bottom: 12px;">
+                    Processor Geometry &nbsp;→&nbsp; Routing Path &nbsp;→&nbsp; Graph Distance &nbsp;→&nbsp; SWAP Overhead
+                </div>
+                <div class="plot-container" style="background: #ffffff; padding: 6px; border-radius: 8px;">
+                    <img id="arch-topos-img" src="" alt="Architecture &amp; Routing Topologies" style="width: 100%; height: auto; display: block; border-radius: 6px;">
+                </div>
+            </div>
+
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; margin-bottom: 12px;">
                     <div>
@@ -1575,9 +1730,23 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
             }
         }
 
+        async function loadArchitectureDiagrams() {
+            try {
+                const res = await fetch("/api/architecture");
+                const data = await res.json();
+                if (data.image) {
+                    const img = document.getElementById("arch-topos-img");
+                    if (img) img.src = "data:image/png;base64," + data.image;
+                }
+            } catch (e) {
+                console.error("Failed to load architecture diagrams:", e);
+            }
+        }
+
         window.addEventListener("DOMContentLoaded", () => {
             onTopologyChange();
             runSimulation();
+            loadArchitectureDiagrams();
         });
     </script>
 </body>
@@ -1606,6 +1775,12 @@ def run_web_server(port: int = 5000, open_browser: bool = True) -> None:
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps(data).encode("utf-8"))
+            elif self.path == "/api/architecture":
+                img_b64 = render_three_topologies_base64()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"image": img_b64}).encode("utf-8"))
             else:
                 self.send_response(404)
                 self.end_headers()
@@ -1782,6 +1957,12 @@ def print_official_benchmark_summary(df: pd.DataFrame) -> None:
     print("\n" + "=" * 80)
     print("                 Live Qiskit Aer Benchmark - 9 Cases")
     print("                 Powered by Qiskit SDK + Qiskit Aer")
+    print("=" * 80)
+    print("\n[Architecture & Routing]")
+    print("  1. 5Q Star:             Q0 -> Q1 -> Q2 -> Q3 (Hops: 3, SWAPs: 4)")
+    print("  2. Heavy-Hex Inspired:  Q0 -> Q1 -> Q2 -> Q3 -> Q4 -> Q5 -> Q6 (Hops: 6, SWAPs: 10)")
+    print("  3. Hyperbolic Inspired: Q6 -> Q1 -> Q0 -> Q3 -> Q11 (Hops: 4, SWAPs: 6)")
+    print("  Processor Geometry -> Routing Path -> Graph Distance -> SWAP Overhead\n")
     print("=" * 80)
     print(df.to_string(index=False))
     print("=" * 80)
