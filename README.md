@@ -202,26 +202,36 @@ Runs 10 unit and integration tests verifying graph connectivity, non-adjacent en
 
 ### 3. Launch the Interactive Quantum Routing Simulator (Demo Mode)
 ```bash
-# Launch native desktop GUI
+# Launch native desktop GUI (Tabs for Custom Simulation & Official Benchmark)
 python src/demo.py
 
 # Or launch in your web browser
 python src/demo.py --web
 
+# Or execute the Live Official 9-Case Benchmark directly from demo
+python src/demo.py --benchmark
+
 # Or run interactive terminal CLI
 python src/demo.py --cli
 ```
 
-**Features & Available Inputs:**
-- **Topology Selector:** `5Q Star` (5Q), `Heavy-Hex Inspired` (14Q), or `Hyperbolic Inspired` (16Q)
-- **Source & Target Qubits:** Custom physical qubit endpoints (with automatic validation ensuring valid, distinct, and non-adjacent routing endpoints)
-- **Condition Selector:** `Ideal`, `Noisy`, or `Noisy + Protection` (stabilizer syndrome post-selection)
-- **Shots Input:** Configurable shot budget (default: `20000`)
-- **Real Qiskit & Qiskit Aer Backend:** Powered by real Qiskit SDK circuit synthesis, native SWAP insertion, Qiskit Aer simulation with realistic gate and readout noise models, and tomographic Pauli basis expectation values ($\langle XX \rangle, \langle YY \rangle, \langle ZZ \rangle$). No mock or fake calculations.
-- **Live Visualizations:** Displays the coupling topology with highlighted source, target, and actual shortest routing trajectory, alongside the compiled Qiskit `QuantumCircuit` diagram.
+**Two Distinct Modes Supported:**
+1. **⚡ Custom Simulation:**
+   - **Topology Selector:** `5Q Star` (5Q), `Heavy-Hex Inspired` (14Q), or `Hyperbolic Inspired` (16Q)
+   - **Source & Target Qubits:** Custom physical qubit endpoints (with automatic validation ensuring valid, distinct, and non-adjacent routing endpoints)
+   - **Condition Selector:** `Ideal`, `Noisy`, or `Noisy + Protection` (stabilizer syndrome post-selection)
+   - **Shots Input:** Configurable shot budget (default: `20000`)
+   - **Live Visualizations:** Displays the coupling topology with highlighted source, target, and actual shortest routing trajectory, alongside the compiled Qiskit `QuantumCircuit` diagram.
+
+2. **📊 Official 9-Case Benchmark:**
+   - Visible banner: **"Live Qiskit Aer Benchmark — 9 Cases"**
+   - Prominent action button: **`RUN OFFICIAL 9-CASE BENCHMARK`**
+   - Executes the 3 Topologies × 3 Conditions benchmark matrix using the underlying `src.benchmark` engine.
+   - Displays all 9 cases in a clean table (Fidelity, XX, YY, ZZ, SWAPs, 2Q Gates, Circuit Depth, Survival Yield).
+   - Renders the key comparison charts (Fidelity Comparison, Routing Overhead, Circuit Depth, Protection Impact).
 
 > [!NOTE]
-> The official 9-case benchmark remains completely reproducible and accessible via `python src/main.py`. The demo mode is an additional capability designed for live hackathon presentations and arbitrary pair explorations.
+> The official 9-case benchmark remains completely reproducible and accessible via `python src/main.py`. Both `main.py` and `demo.py --benchmark` call the identical underlying simulation pipeline.
 
 ### 4. Run the Interactive Jupyter Notebook
 ```bash

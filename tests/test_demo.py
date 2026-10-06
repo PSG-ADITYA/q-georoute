@@ -130,6 +130,18 @@ class TestDemo(unittest.TestCase):
         self.assertIsInstance(b64, str)
         self.assertGreater(len(b64), 500)
 
+    def test_run_official_benchmark_demo(self):
+        """Verify that demo benchmark mode executes the 9-case matrix and returns valid DataFrame."""
+        import os
+        from src.demo import run_official_benchmark_demo
+        test_csv = "results/test_demo_benchmark.csv"
+        df, geom, comp = run_official_benchmark_demo(shots=2000, seed=42, output_csv_path=test_csv)
+        self.assertEqual(len(df), 9)
+        self.assertIn("Fidelity", df.columns)
+        self.assertIn("Survival Yield", df.columns)
+        self.assertTrue(os.path.exists(test_csv))
+        os.remove(test_csv)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,21 +1,24 @@
 """
-Q-GeoRoute: Geometry-Aware Quantum Routing Simulator (Interactive Demo)
+Q-GeoRoute: Geometry-Aware Quantum Routing Simulator & Benchmark
 Powered by Qiskit SDK + Qiskit Aer.
 
-Provides an interactive demo for hackathon presentations and architecture exploration.
-Reuses existing Q-GeoRoute modules:
-- src.topologies
-- src.routing
-- src.noise
-- src.protection
-- src.benchmark
-- src.metrics
+Two Distinct Modes:
+1. CUSTOM SIMULATION:
+   - Interactive source/target qubit routing across 3 processor topologies
+   - Real Qiskit circuit construction, native SWAP shuttling, and Aer simulation
+   - Live topology coupling graph with highlighted routing path & circuit diagram
+2. OFFICIAL 9-CASE BENCHMARK:
+   - "Live Qiskit Aer Benchmark — 9 Cases"
+   - Executes the 3 Topologies × 3 Conditions benchmark matrix using src.benchmark
+   - Clean 9-case results table (Fidelity, XX, YY, ZZ, SWAPs, 2Q Gates, Depth, Yield)
+   - Key comparison charts (Fidelity, SWAPs/Gates, Depth, Protection Impact)
 
-Modes:
+Modes of Execution:
 - Desktop GUI (default): python src/demo.py
 - Browser Web App:       python src/demo.py --web
 - Interactive Terminal:  python src/demo.py --cli
-- Direct Command Line:   python src/demo.py --topology "Hyperbolic Inspired" --source 6 --target 11 --condition Noisy
+- Official Benchmark:    python src/demo.py --benchmark
+- Custom CLI Run:        python src/demo.py --topology "Hyperbolic Inspired" --source 6 --target 11 --condition Noisy
 """
 
 import sys
@@ -32,6 +35,7 @@ from typing import Any, Dict, List, Optional, Tuple
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import networkx as nx
+import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -40,8 +44,20 @@ from qiskit_aer import AerSimulator
 from src.topologies import Topology, get_all_topologies
 from src.routing import build_routed_bell_circuit, RoutingMetrics
 from src.noise import NoiseConfig, build_noise_model
-from src.benchmark import run_single_condition
+from src.benchmark import run_single_condition, run_full_benchmark
+from src.visualization import (
+    generate_all_plots,
+    plot_fidelity_comparison,
+    plot_swap_and_gates_comparison,
+    plot_circuit_depth_comparison,
+    plot_protection_yield_and_fidelity,
+)
+from src.metrics import GeometryMetrics, BenchmarkComparison
 
+
+# ==============================================================================
+# MODE 1: CUSTOM SIMULATION DATA STRUCTURES & EXECUTION
+# ==============================================================================
 
 @dataclass
 class DemoResult:
@@ -353,34 +369,61 @@ def render_topology_base64(topology: Topology) -> str:
 
 
 # ==============================================================================
-# 1. DESKTOP GUI IMPLEMENTATION (Tkinter + Matplotlib)
+# MODE 2: OFFICIAL 9-CASE BENCHMARK EXECUTION & PLOTTING
+# ==============================================================================
+
+def run_official_benchmark_demo(
+    shots: int = 20000,
+    seed: int = 42,
+    output_csv_path: str = "results/benchmark_results.csv",
+    plots_dir: str = "results/plots/",
+) -> Tuple[pd.DataFrame, Dict[str, GeometryMetrics], Dict[str, BenchmarkComparison]]:
+    """
+    Executes the genuine official 9-case benchmark matrix using Qiskit Aer.
+    Reuses existing src.benchmark.run_full_benchmark and src.visualization.generate_all_plots.
+
+    Returns:
+        (df_results, geom_metrics, comparisons)
+    """
+    noise_cfg = NoiseConfig(seed=seed)
+    df_results, geom_metrics, comparisons = run_full_benchmark(
+        noise_config=noise_cfg,
+        shots=shots,
+        seed=seed,
+        output_csv_path=output_csv_path,
+    )
+    generate_all_plots(df_results, output_dir=plots_dir)
+    return df_results, geom_metrics, comparisons
+
+
+def get_benchmark_plot_base64(plot_filename: str, plots_dir: str = "results/plots/") -> Optional[str]:
+    """Reads a generated benchmark comparison plot and encodes it to base64."""
+    path = os.path.join(plots_dir, plot_filename)
+    if not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+
+# ==============================================================================
+# DESKTOP GUI IMPLEMENTATION (Tkinter + Matplotlib Canvas)
 # ==============================================================================
 
 def run_gui() -> None:
-    """Launches the native Python Tkinter desktop GUI simulator."""
+    """Launches the native Python Tkinter desktop GUI simulator with both modes."""
     import tkinter as tk
     from tkinter import ttk, messagebox
     from tkinter.scrolledtext import ScrolledText
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
     root = tk.Tk()
-    root.title("Q-GeoRoute — Quantum Routing Simulator")
-    root.geometry("1180x820")
-    root.minsize(980, 720)
-
-    # Set application background
+    root.title("Q-GeoRoute — Quantum Routing Simulator & Benchmark")
+    root.geometry("1200x840")
+    root.minsize(1020, 740)
     root.configure(bg="#f8fafc")
 
     topos = get_all_topologies()
     topo_names = list(topos.keys())
-
-    # State variables
-    current_topo_var = tk.StringVar(value=topo_names[0])
-    src_var = tk.StringVar()
-    dst_var = tk.StringVar()
-    cond_var = tk.StringVar(value="Noisy")
-    shots_var = tk.StringVar(value="20000")
-    status_var = tk.StringVar(value="Ready. Select parameters and click 'Run Simulation'.")
 
     # Header frame
     header_frame = tk.Frame(root, bg="#1e293b", padx=20, pady=12)
@@ -388,7 +431,7 @@ def run_gui() -> None:
 
     title_label = tk.Label(
         header_frame,
-        text="Q-GeoRoute — Quantum Routing Simulator",
+        text="Q-GeoRoute — Quantum Routing Simulator & Benchmark",
         font=("Helvetica", 16, "bold"),
         fg="#ffffff",
         bg="#1e293b",
@@ -397,46 +440,57 @@ def run_gui() -> None:
 
     subtitle_label = tk.Label(
         header_frame,
-        text="Powered by Qiskit SDK + Qiskit Aer | Geometry-Aware Remote Bell-State Routing",
+        text="Powered by Qiskit SDK + Qiskit Aer | Geometry-Aware Remote Entanglement & Noise Benchmarking",
         font=("Helvetica", 9),
         fg="#94a3b8",
         bg="#1e293b",
     )
     subtitle_label.pack(anchor="w")
 
-    # Main split container
-    main_paned = tk.PanedWindow(root, orient=tk.HORIZONTAL, bg="#e2e8f0", sashwidth=4)
-    main_paned.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
+    # Main Notebook (Two clearly separated modes)
+    notebook = ttk.Notebook(root)
+    notebook.pack(fill=tk.BOTH, expand=True, padx=12, pady=10)
+
+    # --------------------------------------------------------------------------
+    # TAB 1: CUSTOM SIMULATION
+    # --------------------------------------------------------------------------
+    tab_custom = tk.Frame(notebook, bg="#f8fafc")
+    notebook.add(tab_custom, text="  ⚡ Custom Simulation  ")
+
+    # State variables for custom mode
+    current_topo_var = tk.StringVar(value=topo_names[2])  # Default to Hyperbolic
+    src_var = tk.StringVar()
+    dst_var = tk.StringVar()
+    cond_var = tk.StringVar(value="Noisy")
+    shots_var = tk.StringVar(value="20000")
+    status_var = tk.StringVar(value="Ready. Select parameters and click 'RUN SIMULATION'.")
+
+    custom_paned = tk.PanedWindow(tab_custom, orient=tk.HORIZONTAL, bg="#e2e8f0", sashwidth=4)
+    custom_paned.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
     # Left Column: Controls & Metrics
-    left_frame = tk.Frame(main_paned, bg="#ffffff", padx=14, pady=12, relief=tk.RIDGE, bd=1)
-    main_paned.add(left_frame, minsize=420, width=450)
+    left_frame = tk.Frame(custom_paned, bg="#ffffff", padx=14, pady=12, relief=tk.RIDGE, bd=1)
+    custom_paned.add(left_frame, minsize=420, width=450)
 
-    # Controls Section
     ctrl_group = tk.LabelFrame(left_frame, text=" Simulation Parameters ", font=("Helvetica", 10, "bold"), bg="#ffffff", fg="#1e293b", padx=10, pady=10)
     ctrl_group.pack(fill=tk.X, pady=(0, 10))
 
-    # 1. Topology selector
     tk.Label(ctrl_group, text="Processor Topology:", font=("Helvetica", 9, "bold"), bg="#ffffff").grid(row=0, column=0, sticky="w", pady=4)
     topo_combo = ttk.Combobox(ctrl_group, textvariable=current_topo_var, values=topo_names, state="readonly", width=22)
     topo_combo.grid(row=0, column=1, sticky="ew", pady=4, padx=5)
 
-    # 2. Source qubit
     tk.Label(ctrl_group, text="Source Qubit:", font=("Helvetica", 9, "bold"), bg="#ffffff").grid(row=1, column=0, sticky="w", pady=4)
     src_combo = ttk.Combobox(ctrl_group, textvariable=src_var, state="readonly", width=22)
     src_combo.grid(row=1, column=1, sticky="ew", pady=4, padx=5)
 
-    # 3. Target qubit
     tk.Label(ctrl_group, text="Target Qubit:", font=("Helvetica", 9, "bold"), bg="#ffffff").grid(row=2, column=0, sticky="w", pady=4)
     dst_combo = ttk.Combobox(ctrl_group, textvariable=dst_var, state="readonly", width=22)
     dst_combo.grid(row=2, column=1, sticky="ew", pady=4, padx=5)
 
-    # 4. Condition selector
     tk.Label(ctrl_group, text="Condition:", font=("Helvetica", 9, "bold"), bg="#ffffff").grid(row=3, column=0, sticky="w", pady=4)
     cond_combo = ttk.Combobox(ctrl_group, textvariable=cond_var, values=["Ideal", "Noisy", "Noisy + Protection"], state="readonly", width=22)
     cond_combo.grid(row=3, column=1, sticky="ew", pady=4, padx=5)
 
-    # 5. Shots input
     tk.Label(ctrl_group, text="Shots:", font=("Helvetica", 9, "bold"), bg="#ffffff").grid(row=4, column=0, sticky="w", pady=4)
     shots_entry = ttk.Entry(ctrl_group, textvariable=shots_var, width=24)
     shots_entry.grid(row=4, column=1, sticky="ew", pady=4, padx=5)
@@ -450,16 +504,14 @@ def run_gui() -> None:
             dst_combo["values"] = q_choices
             src_var.set(f"Q{t.source}")
             dst_var.set(f"Q{t.destination}")
-            # Update canvas with default endpoints
-            render_canvas(t)
+            render_custom_canvas(t)
 
     current_topo_var.trace_add("write", update_qubit_choices)
 
-    # Buttons Frame
     btn_frame = tk.Frame(ctrl_group, bg="#ffffff", pady=6)
     btn_frame.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 2))
 
-    run_btn = tk.Button(
+    run_custom_btn = tk.Button(
         btn_frame,
         text="▶ RUN SIMULATION",
         font=("Helvetica", 10, "bold"),
@@ -471,11 +523,11 @@ def run_gui() -> None:
         padx=12,
         pady=5,
     )
-    run_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+    run_custom_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
 
     reset_btn = tk.Button(
         btn_frame,
-        text="Reset",
+        text="Reset Defaults",
         font=("Helvetica", 9),
         bg="#e2e8f0",
         fg="#334155",
@@ -486,7 +538,6 @@ def run_gui() -> None:
     )
     reset_btn.pack(side=tk.RIGHT, padx=(4, 0))
 
-    # Status / Error banner
     status_label = tk.Label(
         left_frame,
         textvariable=status_var,
@@ -495,13 +546,11 @@ def run_gui() -> None:
         bg="#f1f5f9",
         padx=8,
         pady=6,
-        relief=tk.FLAT,
         wraplength=410,
         justify=tk.LEFT,
     )
     status_label.pack(fill=tk.X, pady=(0, 10))
 
-    # Results Display Card
     results_group = tk.LabelFrame(left_frame, text=" Live Quantum Simulation Metrics ", font=("Helvetica", 10, "bold"), bg="#ffffff", fg="#1e293b", padx=10, pady=10)
     results_group.pack(fill=tk.BOTH, expand=True)
 
@@ -510,28 +559,23 @@ def run_gui() -> None:
     results_text.insert(tk.END, "Configure parameters and click 'RUN SIMULATION' to evaluate real Bell-state fidelity.")
     results_text.config(state=tk.DISABLED)
 
-    # Right Column: Visualizations & Circuit
-    right_paned = tk.PanedWindow(main_paned, orient=tk.VERTICAL, bg="#e2e8f0", sashwidth=4)
-    main_paned.add(right_paned, minsize=520, width=680)
+    # Right Column: Graph & Circuit
+    right_paned = tk.PanedWindow(custom_paned, orient=tk.VERTICAL, bg="#e2e8f0", sashwidth=4)
+    custom_paned.add(right_paned, minsize=520, width=680)
 
-    # Top: Matplotlib Figure Canvas
     plot_frame = tk.Frame(right_paned, bg="#ffffff", padx=8, pady=8, relief=tk.RIDGE, bd=1)
     right_paned.add(plot_frame, minsize=380, height=430)
 
-    plot_header = tk.Label(plot_frame, text="Topology & Shortest Routing Path Visualization", font=("Helvetica", 10, "bold"), bg="#ffffff", fg="#1e293b")
-    plot_header.pack(anchor="w", pady=(0, 4))
-
+    tk.Label(plot_frame, text="Topology & Shortest Routing Path Visualization", font=("Helvetica", 10, "bold"), bg="#ffffff", fg="#1e293b").pack(anchor="w", pady=(0, 4))
     canvas_container = tk.Frame(plot_frame, bg="#ffffff")
     canvas_container.pack(fill=tk.BOTH, expand=True)
 
     current_canvas = [None]
 
-    def render_canvas(t_obj: Topology):
-        # Clear old canvas if present
+    def render_custom_canvas(t_obj: Topology):
         if current_canvas[0] is not None:
             current_canvas[0].get_tk_widget().destroy()
             current_canvas[0] = None
-
         fig = create_topology_figure(t_obj, figsize=(6.2, 4.3))
         canvas = FigureCanvasTkAgg(fig, master=canvas_container)
         canvas.draw()
@@ -539,27 +583,22 @@ def run_gui() -> None:
         current_canvas[0] = canvas
         plt.close(fig)
 
-    # Bottom: Routed Qiskit Circuit Text View
     circuit_frame = tk.Frame(right_paned, bg="#ffffff", padx=8, pady=8, relief=tk.RIDGE, bd=1)
-    right_paned.add(circuit_frame, minsize=240, height=280)
+    right_paned.add(circuit_frame, minsize=220, height=260)
 
-    circuit_header = tk.Label(circuit_frame, text="Routed Qiskit QuantumCircuit (Generated Native SWAP Insertion)", font=("Helvetica", 10, "bold"), bg="#ffffff", fg="#1e293b")
-    circuit_header.pack(anchor="w", pady=(0, 4))
-
+    tk.Label(circuit_frame, text="Routed Qiskit QuantumCircuit (Generated Native SWAP Insertion)", font=("Helvetica", 10, "bold"), bg="#ffffff", fg="#1e293b").pack(anchor="w", pady=(0, 4))
     circuit_text = ScrolledText(circuit_frame, font=("Courier New", 9), bg="#0f172a", fg="#38bdf8", relief=tk.FLAT, wrap=tk.NONE)
     circuit_text.pack(fill=tk.BOTH, expand=True)
     circuit_text.insert(tk.END, "# Generated Qiskit circuit with SWAP routing and tomographic measurement will appear here.")
     circuit_text.config(state=tk.DISABLED)
 
-    # Execution callback
-    def on_run():
+    def on_custom_run():
         t_name = current_topo_var.get()
         s_str = src_var.get().replace("Q", "").strip()
         d_str = dst_var.get().replace("Q", "").strip()
         cond = cond_var.get()
         shots_str = shots_var.get().strip()
 
-        # Input validation
         is_valid, err_msg, custom_topo, shots_int = validate_demo_inputs(
             topology_name=t_name,
             source_val=s_str,
@@ -574,7 +613,6 @@ def run_gui() -> None:
             messagebox.showwarning("Invalid Input", err_msg)
             return
 
-        # Valid input: Run real simulation
         status_var.set("⏳ Running real Qiskit/Aer simulation across Pauli bases...")
         status_label.config(fg="#2563eb", bg="#eff6ff")
         root.update_idletasks()
@@ -589,20 +627,18 @@ def run_gui() -> None:
                 seed=42,
             )
 
-            # Update status
             status_var.set(f"✔ Completed successfully! Bell Fidelity: {res.fidelity:.4f}")
             status_label.config(fg="#16a34a", bg="#f0fdf4")
 
-            # Update Metrics Panel
             results_text.config(state=tk.NORMAL)
             results_text.delete("1.0", tk.END)
 
-            path_str = " → ".join(f"Q{n}" for n in res.path)
+            path_str = " -> ".join(f"Q{n}" for n in res.path)
             lines = [
-                f"Topology: {res.topology_name}",
-                f"Source:   Q{res.source}",
-                f"Target:   Q{res.target}",
-                f"Condition: {res.condition}",
+                f"Topology:       {res.topology_name}",
+                f"Source:         Q{res.source}",
+                f"Target:         Q{res.target}",
+                f"Condition:      {res.condition}",
                 "",
                 f"Path:",
                 f"{path_str}",
@@ -621,37 +657,272 @@ def run_gui() -> None:
             if res.survival_yield is not None:
                 lines.extend([
                     "",
-                    f"Survival Yield (η): {res.survival_yield * 100:.1f}%",
+                    f"Survival Yield: {res.survival_yield * 100:.1f}%",
                     f"(Stabilizer syndrome post-selection filtered {100 - res.survival_yield * 100:.1f}% error shots)",
                 ])
 
             results_text.insert(tk.END, "\n".join(lines))
             results_text.config(state=tk.DISABLED)
 
-            # Update Circuit View
             circuit_text.config(state=tk.NORMAL)
             circuit_text.delete("1.0", tk.END)
             circuit_text.insert(tk.END, res.circuit_diagram)
             circuit_text.config(state=tk.DISABLED)
 
-            # Update Matplotlib Graph Canvas
-            render_canvas(custom_topo)
+            render_custom_canvas(custom_topo)
 
         except Exception as ex:
             status_var.set(f"❌ Execution Error: {str(ex)}")
             status_label.config(fg="#dc2626", bg="#fef2f2")
             messagebox.showerror("Simulation Error", f"Simulation failed: {str(ex)}")
 
-    run_btn.config(command=on_run)
+    run_custom_btn.config(command=on_custom_run)
 
-    # Initialize endpoints
+    # --------------------------------------------------------------------------
+    # TAB 2: OFFICIAL 9-CASE BENCHMARK
+    # --------------------------------------------------------------------------
+    tab_benchmark = tk.Frame(notebook, bg="#f8fafc")
+    notebook.add(tab_benchmark, text="  📊 Official 9-Case Benchmark  ")
+
+    bench_top_frame = tk.Frame(tab_benchmark, bg="#ffffff", padx=16, pady=12, relief=tk.RIDGE, bd=1)
+    bench_top_frame.pack(fill=tk.X, padx=8, pady=(8, 4))
+
+    bench_heading = tk.Label(
+        bench_top_frame,
+        text="Live Qiskit Aer Benchmark — 9 Cases",
+        font=("Helvetica", 14, "bold"),
+        fg="#1e293b",
+        bg="#ffffff",
+    )
+    bench_heading.pack(anchor="w")
+
+    bench_subheading = tk.Label(
+        bench_top_frame,
+        text="3 Topologies (5Q Star, Heavy-Hex, Hyperbolic) × 3 Conditions (Ideal, Noisy, Noisy + Protection) | 20,000 shots/basis",
+        font=("Helvetica", 9),
+        fg="#64748b",
+        bg="#ffffff",
+    )
+    bench_subheading.pack(anchor="w", pady=(2, 8))
+
+    bench_action_bar = tk.Frame(bench_top_frame, bg="#ffffff")
+    bench_action_bar.pack(fill=tk.X)
+
+    run_bench_btn = tk.Button(
+        bench_action_bar,
+        text="▶ RUN OFFICIAL 9-CASE BENCHMARK",
+        font=("Helvetica", 11, "bold"),
+        bg="#16a34a",
+        fg="#ffffff",
+        activebackground="#15803d",
+        activeforeground="#ffffff",
+        cursor="hand2",
+        padx=16,
+        pady=7,
+    )
+    run_bench_btn.pack(side=tk.LEFT)
+
+    bench_status_var = tk.StringVar(value="Click the button above to execute the live 9-case benchmark matrix with Qiskit Aer.")
+    bench_status_label = tk.Label(
+        bench_action_bar,
+        textvariable=bench_status_var,
+        font=("Helvetica", 9, "italic"),
+        fg="#475569",
+        bg="#f1f5f9",
+        padx=12,
+        pady=6,
+    )
+    bench_status_label.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(12, 0))
+
+    # Split: Benchmark Table (Left/Top) & Comparison Charts (Right/Bottom)
+    bench_split = tk.PanedWindow(tab_benchmark, orient=tk.VERTICAL, bg="#e2e8f0", sashwidth=4)
+    bench_split.pack(fill=tk.BOTH, expand=True, padx=8, pady=4)
+
+    # Table Frame
+    table_frame = tk.Frame(bench_split, bg="#ffffff", padx=10, pady=10, relief=tk.RIDGE, bd=1)
+    bench_split.add(table_frame, minsize=240, height=270)
+
+    tk.Label(table_frame, text="Benchmark Results Matrix (9 Experimental Conditions)", font=("Helvetica", 10, "bold"), bg="#ffffff", fg="#1e293b").pack(anchor="w", pady=(0, 6))
+
+    cols = ("Topology", "Condition", "Fidelity", "XX", "YY", "ZZ", "SWAPs", "2Q Gates", "Depth", "Survival Yield")
+    tree = ttk.Treeview(table_frame, columns=cols, show="headings", height=9)
+    for col in cols:
+        tree.heading(col, text=col)
+        col_w = 140 if col in ("Topology", "Condition") else 85
+        tree.column(col, width=col_w, anchor="center")
+
+    tree.tag_configure("ideal", background="#eff6ff")
+    tree.tag_configure("noisy", background="#fff7ed")
+    tree.tag_configure("protected", background="#f0fdf4")
+
+    tree.pack(fill=tk.BOTH, expand=True)
+
+    # Charts & Summary Frame
+    charts_frame = tk.Frame(bench_split, bg="#ffffff", padx=10, pady=10, relief=tk.RIDGE, bd=1)
+    bench_split.add(charts_frame, minsize=320, height=360)
+
+    chart_ctrl_bar = tk.Frame(charts_frame, bg="#ffffff")
+    chart_ctrl_bar.pack(fill=tk.X, pady=(0, 6))
+
+    tk.Label(chart_ctrl_bar, text="Comparison Chart:", font=("Helvetica", 10, "bold"), bg="#ffffff", fg="#1e293b").pack(side=tk.LEFT, padx=(0, 8))
+
+    chart_options = [
+        "Fidelity Comparison (Ideal vs Noisy vs Protected)",
+        "Routing Overhead (SWAPs & 2Q Gates)",
+        "Routed Quantum Circuit Depth",
+        "Protection Impact & Survival Yield",
+        "Fidelity vs Routing Overhead Frontier",
+    ]
+    chart_select_var = tk.StringVar(value=chart_options[0])
+    chart_combo = ttk.Combobox(chart_ctrl_bar, textvariable=chart_select_var, values=chart_options, state="readonly", width=42)
+    chart_combo.pack(side=tk.LEFT)
+
+    chart_canvas_box = tk.Frame(charts_frame, bg="#ffffff")
+    chart_canvas_box.pack(fill=tk.BOTH, expand=True)
+
+    chart_canvas_ref = [None]
+    benchmark_df_cache = [None]
+
+    def render_benchmark_chart(*args):
+        if benchmark_df_cache[0] is None:
+            return
+        df = benchmark_df_cache[0]
+        choice = chart_select_var.get()
+
+        if chart_canvas_ref[0] is not None:
+            chart_canvas_ref[0].get_tk_widget().destroy()
+            chart_canvas_ref[0] = None
+
+        fig, ax = plt.subplots(figsize=(8.5, 3.8), dpi=95)
+        if choice == chart_options[0]:
+            topos_list = df["Topology"].unique()
+            x = np.arange(len(topos_list))
+            w = 0.25
+            id_vals = [df[(df["Topology"] == t) & (df["Condition"] == "Ideal")]["Fidelity"].values[0] for t in topos_list]
+            no_vals = [df[(df["Topology"] == t) & (df["Condition"] == "Noisy")]["Fidelity"].values[0] for t in topos_list]
+            pr_vals = [df[(df["Topology"] == t) & (df["Condition"] == "Noisy + Protection")]["Fidelity"].values[0] for t in topos_list]
+            ax.bar(x - w, id_vals, w, label="Ideal", color="#2b5c8f", edgecolor="black")
+            ax.bar(x, no_vals, w, label="Noisy", color="#d95f02", edgecolor="black")
+            ax.bar(x + w, pr_vals, w, label="Noisy + Protection", color="#2ca02c", edgecolor="black")
+            ax.set_ylabel("Fidelity F(|Phi+>)")
+            ax.set_xticks(x)
+            ax.set_xticklabels(topos_list, fontweight="bold")
+            ax.set_ylim(0.0, 1.15)
+            ax.legend(loc="upper right")
+            ax.set_title("Remote Bell-State Fidelity Comparison across Topologies", pad=8)
+        elif choice == chart_options[1]:
+            df_id = df[df["Condition"] == "Ideal"]
+            topos_list = df_id["Topology"].tolist()
+            swaps = df_id["SWAPs"].tolist()
+            two_q = df_id["2Q Gates"].tolist()
+            x = np.arange(len(topos_list))
+            w = 0.35
+            ax.bar(x - w/2, swaps, w, label="SWAPs", color="#807dba", edgecolor="black")
+            ax.bar(x + w/2, two_q, w, label="Total 2Q Gates", color="#41b6c4", edgecolor="black")
+            ax.set_ylabel("Gate Count")
+            ax.set_xticks(x)
+            ax.set_xticklabels(topos_list, fontweight="bold")
+            ax.legend()
+            ax.set_title("Routing Gate Overhead by Architecture", pad=8)
+        elif choice == chart_options[2]:
+            df_id = df[df["Condition"] == "Ideal"]
+            topos_list = df_id["Topology"].tolist()
+            depths = df_id["Depth"].tolist()
+            bars = ax.bar(topos_list, depths, color=["#7fc97f", "#beaed4", "#fdc086"], width=0.45, edgecolor="black")
+            ax.set_ylabel("DAG Depth")
+            ax.set_title("Routed Circuit Depth Comparison", pad=8)
+            for b in bars:
+                ax.annotate(str(int(b.get_height())), xy=(b.get_x() + b.get_width() / 2, b.get_height()), xytext=(0, 3), textcoords="offset points", ha="center", fontweight="bold")
+        elif choice == chart_options[3]:
+            topos_list = df["Topology"].unique()
+            x = np.arange(len(topos_list))
+            w = 0.3
+            no_vals = [df[(df["Topology"] == t) & (df["Condition"] == "Noisy")]["Fidelity"].values[0] for t in topos_list]
+            pr_vals = [df[(df["Topology"] == t) & (df["Condition"] == "Noisy + Protection")]["Fidelity"].values[0] for t in topos_list]
+            yields = [df[(df["Topology"] == t) & (df["Condition"] == "Noisy + Protection")]["Survival Yield"].values[0] * 100 for t in topos_list]
+            ax.bar(x - w/2, no_vals, w, label="Noisy Fidelity", color="#d95f02", edgecolor="black")
+            ax.bar(x + w/2, pr_vals, w, label="Protected Fidelity", color="#2ca02c", edgecolor="black")
+            ax.set_ylabel("Fidelity")
+            ax.set_ylim(0.75, 1.0)
+            ax.set_xticks(x)
+            ax.set_xticklabels(topos_list, fontweight="bold")
+            ax2 = ax.twinx()
+            ax2.plot(x, yields, color="#7570b3", marker="D", lw=2, label="Survival Yield (%)")
+            ax2.set_ylabel("Survival Yield (%)", color="#7570b3")
+            ax2.set_ylim(70, 105)
+            ax.set_title("Protection Efficacy vs Post-Selection Yield", pad=8)
+        else:
+            topos_list = df["Topology"].unique()
+            colors = {"5Q Star": "#1f78b4", "Heavy-Hex Inspired": "#e31a1c", "Hyperbolic Inspired": "#33a02c"}
+            for t in topos_list:
+                row_n = df[(df["Topology"] == t) & (df["Condition"] == "Noisy")].iloc[0]
+                row_p = df[(df["Topology"] == t) & (df["Condition"] == "Noisy + Protection")].iloc[0]
+                g = row_n["2Q Gates"]
+                ax.scatter(g, row_n["Fidelity"], color=colors.get(t, "#333"), s=140, edgecolor="black", label=f"{t} (Noisy)")
+                ax.scatter(g, row_p["Fidelity"], color=colors.get(t, "#333"), s=160, facecolors="none", lw=2, label=f"{t} (Protected)")
+            ax.set_xlabel("Two-Qubit Gates along Path")
+            ax.set_ylabel("Bell Fidelity")
+            ax.set_title("Fidelity vs Routing Overhead Trade-off Frontier", pad=8)
+            ax.legend(loc="upper right", fontsize=8)
+
+        fig.tight_layout()
+        c = FigureCanvasTkAgg(fig, master=chart_canvas_box)
+        c.draw()
+        c.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        chart_canvas_ref[0] = c
+        plt.close(fig)
+
+    chart_select_var.trace_add("write", render_benchmark_chart)
+
+    def on_run_official_benchmark():
+        bench_status_var.set("⏳ Running official 9-case benchmark matrix with Qiskit Aer (20,000 shots/basis)...")
+        bench_status_label.config(fg="#2563eb", bg="#eff6ff")
+        root.update_idletasks()
+
+        try:
+            df, geom, comp = run_official_benchmark_demo(shots=20000, seed=42)
+            benchmark_df_cache[0] = df
+
+            # Populate Treeview
+            for item in tree.get_children():
+                tree.delete(item)
+
+            for _, row in df.iterrows():
+                cond = row["Condition"]
+                tag = "ideal" if cond == "Ideal" else ("noisy" if cond == "Noisy" else "protected")
+                tree.insert("", tk.END, values=(
+                    row["Topology"],
+                    cond,
+                    f"{row['Fidelity']:.4f}",
+                    f"{row['XX']:+.4f}",
+                    f"{row['YY']:+.4f}",
+                    f"{row['ZZ']:+.4f}",
+                    row["SWAPs"],
+                    row["2Q Gates"],
+                    row["Depth"],
+                    f"{row['Survival Yield']*100:.1f}%" if cond == "Noisy + Protection" else "100.0%",
+                ), tags=(tag,))
+
+            bench_status_var.set("✔ Official 9-Case Benchmark completed! Results saved to 'results/benchmark_results.csv'.")
+            bench_status_label.config(fg="#16a34a", bg="#f0fdf4")
+
+            render_benchmark_chart()
+
+        except Exception as ex:
+            bench_status_var.set(f"❌ Benchmark Error: {str(ex)}")
+            bench_status_label.config(fg="#dc2626", bg="#fef2f2")
+            messagebox.showerror("Benchmark Error", str(ex))
+
+    run_bench_btn.config(command=on_run_official_benchmark)
+
+    # Initialize custom endpoints
     update_qubit_choices()
 
     root.mainloop()
 
 
 # ==============================================================================
-# 2. LOCAL BROWSER / WEB SERVER IMPLEMENTATION (Pure Python http.server)
+# LOCAL BROWSER / WEB SERVER IMPLEMENTATION (Pure Python http.server)
 # ==============================================================================
 
 WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
@@ -659,7 +930,7 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Q-GeoRoute — Quantum Routing Simulator</title>
+    <title>Q-GeoRoute — Quantum Routing Simulator & Benchmark</title>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -668,6 +939,7 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
             --accent-blue: #38bdf8;
             --accent-green: #4ade80;
             --accent-purple: #c084fc;
+            --accent-amber: #fbbf24;
             --accent-red: #f87171;
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
@@ -682,7 +954,7 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
         }
         .header {
             max-width: 1240px;
-            margin: 0 auto 24px auto;
+            margin: 0 auto 20px auto;
             border-bottom: 1px solid var(--card-border);
             padding-bottom: 16px;
             display: flex;
@@ -702,19 +974,47 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
             font-size: 13px;
             font-weight: 600;
             background: rgba(56, 189, 248, 0.1);
-            padding: 4px 10px;
+            padding: 5px 12px;
             border-radius: 6px;
             border: 1px solid rgba(56, 189, 248, 0.25);
+        }
+        .nav-tabs {
+            max-width: 1240px;
+            margin: 0 auto 20px auto;
+            display: flex;
+            gap: 10px;
+        }
+        .tab-btn {
+            background: #1e293b;
+            border: 1px solid var(--card-border);
+            color: var(--text-muted);
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .tab-btn:hover {
+            color: #ffffff;
+            border-color: var(--accent-blue);
+        }
+        .tab-btn.active {
+            background: #2563eb;
+            color: #ffffff;
+            border-color: #2563eb;
         }
         .container {
             max-width: 1240px;
             margin: 0 auto;
+        }
+        .custom-grid {
             display: grid;
             grid-template-columns: 380px 1fr;
             gap: 24px;
         }
         @media (max-width: 960px) {
-            .container { grid-template-columns: 1fr; }
+            .custom-grid { grid-template-columns: 1fr; }
         }
         .card {
             background: var(--card-bg);
@@ -755,9 +1055,7 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
             outline: none;
             transition: border 0.15s;
         }
-        .form-control:focus {
-            border-color: var(--accent-blue);
-        }
+        .form-control:focus { border-color: var(--accent-blue); }
         .btn-run {
             width: 100%;
             padding: 12px;
@@ -773,6 +1071,19 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
         }
         .btn-run:hover { background: #1d4ed8; }
         .btn-run:disabled { background: #475569; cursor: not-allowed; }
+        .btn-benchmark {
+            background: #16a34a;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 700;
+            border: none;
+            border-radius: 6px;
+            padding: 12px 24px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-benchmark:hover { background: #15803d; }
+        .btn-benchmark:disabled { background: #475569; cursor: not-allowed; }
         .alert {
             padding: 10px 14px;
             border-radius: 6px;
@@ -789,6 +1100,11 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
             background: rgba(74, 222, 128, 0.15);
             border: 1px solid var(--accent-green);
             color: #86efac;
+        }
+        .alert-info {
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid var(--accent-blue);
+            color: #7dd3fc;
         }
         .metrics-grid {
             display: grid;
@@ -853,110 +1169,213 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
             line-height: 1.25;
             max-height: 280px;
         }
+        /* Benchmark Table */
+        .bench-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-top: 14px;
+        }
+        .bench-table th, .bench-table td {
+            padding: 10px 12px;
+            text-align: center;
+            border: 1px solid var(--card-border);
+        }
+        .bench-table th {
+            background: #090d16;
+            color: var(--text-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+        }
+        .bench-table tr:hover { background: rgba(255, 255, 255, 0.03); }
+        .badge-ideal { background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+        .badge-noisy { background: rgba(251, 191, 36, 0.15); color: #fbbf24; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+        .badge-protected { background: rgba(74, 222, 128, 0.15); color: #4ade80; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+            gap: 20px;
+            margin-top: 16px;
+        }
+        @media (max-width: 600px) {
+            .charts-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <div>
-            <h1>Q-GeoRoute — Quantum Routing Simulator</h1>
+            <h1>Q-GeoRoute — Quantum Routing Simulator & Benchmark</h1>
             <p style="color: var(--text-muted); font-size: 14px; margin-top: 4px;">Geometry-Aware Quantum Routing & Bell-State Benchmarking across Processor Topologies</p>
         </div>
         <div class="badge">Powered by Qiskit SDK + Qiskit Aer</div>
     </div>
 
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+        <button id="tab-custom-btn" class="tab-btn active" onclick="switchTab('custom')">⚡ Custom Simulation</button>
+        <button id="tab-bench-btn" class="tab-btn" onclick="switchTab('benchmark')">📊 Official 9-Case Benchmark</button>
+    </div>
+
     <div class="container">
-        <!-- Left Column: Controls -->
-        <div>
-            <div class="card">
-                <h2>Simulation Parameters</h2>
-                <div class="form-group">
-                    <label for="topo-select">Topology:</label>
-                    <select id="topo-select" class="form-control" onchange="onTopologyChange()">
-                        <option value="5Q Star">5Q Star (5 Qubits)</option>
-                        <option value="Heavy-Hex Inspired">Heavy-Hex Inspired (14 Qubits)</option>
-                        <option value="Hyperbolic Inspired" selected>Hyperbolic Inspired (16 Qubits)</option>
-                    </select>
+        <!-- ========================================== -->
+        <!-- VIEW 1: CUSTOM SIMULATION                 -->
+        <!-- ========================================== -->
+        <div id="view-custom" class="custom-grid">
+            <div>
+                <div class="card">
+                    <h2>Simulation Parameters</h2>
+                    <div class="form-group">
+                        <label for="topo-select">Topology:</label>
+                        <select id="topo-select" class="form-control" onchange="onTopologyChange()">
+                            <option value="5Q Star">5Q Star (5 Qubits)</option>
+                            <option value="Heavy-Hex Inspired">Heavy-Hex Inspired (14 Qubits)</option>
+                            <option value="Hyperbolic Inspired" selected>Hyperbolic Inspired (16 Qubits)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="src-select">Source Qubit:</label>
+                        <select id="src-select" class="form-control"></select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="dst-select">Target Qubit:</label>
+                        <select id="dst-select" class="form-control"></select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="cond-select">Condition:</label>
+                        <select id="cond-select" class="form-control">
+                            <option value="Ideal">Ideal Baseline</option>
+                            <option value="Noisy" selected>Noisy Baseline</option>
+                            <option value="Noisy + Protection">Noisy + Protection (Stabilizer Post-Selection)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="shots-input">Shots:</label>
+                        <input type="number" id="shots-input" class="form-control" value="20000" min="1" step="1000">
+                    </div>
+
+                    <button id="run-btn" class="btn-run" onclick="runSimulation()">▶ RUN SIMULATION</button>
+                    <div id="error-alert" class="alert alert-error"></div>
+                    <div id="status-alert" class="alert alert-success"></div>
                 </div>
 
-                <div class="form-group">
-                    <label for="src-select">Source Qubit:</label>
-                    <select id="src-select" class="form-control"></select>
-                </div>
+                <div class="card" id="results-card">
+                    <h2>Simulation Metrics</h2>
+                    <div id="path-box" class="path-banner">Route: Q6 → Q1 → Q0 → Q3 → Q11</div>
+                    <div class="metrics-grid">
+                        <div class="metric-box">
+                            <div class="metric-label">Bell Fidelity</div>
+                            <div id="fid-val" class="metric-value highlight">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Hops</div>
+                            <div id="hops-val" class="metric-value">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">SWAPs</div>
+                            <div id="swaps-val" class="metric-value">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">2Q Gates</div>
+                            <div id="gates-val" class="metric-value">--</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">DAG Depth</div>
+                            <div id="depth-val" class="metric-value blue">--</div>
+                        </div>
+                        <div class="metric-box" id="yield-box" style="display:none;">
+                            <div class="metric-label">Survival Yield</div>
+                            <div id="yield-val" class="metric-value highlight">--</div>
+                        </div>
+                    </div>
 
-                <div class="form-group">
-                    <label for="dst-select">Target Qubit:</label>
-                    <select id="dst-select" class="form-control"></select>
+                    <div style="font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between; border-top: 1px solid var(--card-border); padding-top: 10px;">
+                        <div>&lt;XX&gt;: <strong id="xx-val" style="color:#fff;">--</strong></div>
+                        <div>&lt;YY&gt;: <strong id="yy-val" style="color:#fff;">--</strong></div>
+                        <div>&lt;ZZ&gt;: <strong id="zz-val" style="color:#fff;">--</strong></div>
+                    </div>
                 </div>
-
-                <div class="form-group">
-                    <label for="cond-select">Condition:</label>
-                    <select id="cond-select" class="form-control">
-                        <option value="Ideal">Ideal Baseline</option>
-                        <option value="Noisy" selected>Noisy Baseline</option>
-                        <option value="Noisy + Protection">Noisy + Protection (Stabilizer Post-Selection)</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label for="shots-input">Shots:</label>
-                    <input type="number" id="shots-input" class="form-control" value="20000" min="1" step="1000">
-                </div>
-
-                <button id="run-btn" class="btn-run" onclick="runSimulation()">▶ RUN SIMULATION</button>
-                <div id="error-alert" class="alert alert-error"></div>
-                <div id="status-alert" class="alert alert-success"></div>
             </div>
 
-            <div class="card" id="results-card">
-                <h2>Simulation Metrics</h2>
-                <div id="path-box" class="path-banner">Route: Q6 → Q1 → Q0 → Q3 → Q11</div>
-                <div class="metrics-grid">
-                    <div class="metric-box">
-                        <div class="metric-label">Bell Fidelity</div>
-                        <div id="fid-val" class="metric-value highlight">--</div>
-                    </div>
-                    <div class="metric-box">
-                        <div class="metric-label">Hops</div>
-                        <div id="hops-val" class="metric-value">--</div>
-                    </div>
-                    <div class="metric-box">
-                        <div class="metric-label">SWAPs</div>
-                        <div id="swaps-val" class="metric-value">--</div>
-                    </div>
-                    <div class="metric-box">
-                        <div class="metric-label">2Q Gates</div>
-                        <div id="gates-val" class="metric-value">--</div>
-                    </div>
-                    <div class="metric-box">
-                        <div class="metric-label">DAG Depth</div>
-                        <div id="depth-val" class="metric-value blue">--</div>
-                    </div>
-                    <div class="metric-box" id="yield-box" style="display:none;">
-                        <div class="metric-label">Survival Yield</div>
-                        <div id="yield-val" class="metric-value highlight">--</div>
+            <div>
+                <div class="card">
+                    <h2>Coupling Graph & Routed Path</h2>
+                    <div class="plot-container">
+                        <img id="plot-img" src="" alt="Topology Coupling Graph">
                     </div>
                 </div>
 
-                <div style="font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between; border-top: 1px solid var(--card-border); padding-top: 10px;">
-                    <div>&lt;XX&gt;: <strong id="xx-val" style="color:#fff;">--</strong></div>
-                    <div>&lt;YY&gt;: <strong id="yy-val" style="color:#fff;">--</strong></div>
-                    <div>&lt;ZZ&gt;: <strong id="zz-val" style="color:#fff;">--</strong></div>
+                <div class="card">
+                    <h2>Routed Qiskit QuantumCircuit</h2>
+                    <pre id="circuit-box" class="circuit-box">Qiskit QuantumCircuit diagram will appear here...</pre>
                 </div>
             </div>
         </div>
 
-        <!-- Right Column: Visualization & Circuit -->
-        <div>
+        <!-- ========================================== -->
+        <!-- VIEW 2: OFFICIAL 9-CASE BENCHMARK         -->
+        <!-- ========================================== -->
+        <div id="view-benchmark" style="display:none;">
             <div class="card">
-                <h2>Coupling Graph & Routed Path</h2>
-                <div class="plot-container">
-                    <img id="plot-img" src="" alt="Topology Coupling Graph">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px; margin-bottom: 12px;">
+                    <div>
+                        <h2 style="margin: 0; border: none; padding: 0; font-size: 18px; color: #ffffff;">Live Qiskit Aer Benchmark — 9 Cases</h2>
+                        <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">3 Topologies × 3 Conditions | Real Qiskit Aer Simulation | 20,000 shots per basis</p>
+                    </div>
+                    <button id="bench-run-btn" class="btn-benchmark" onclick="runOfficialBenchmark()">▶ RUN OFFICIAL 9-CASE BENCHMARK</button>
+                </div>
+                <div id="bench-alert" class="alert alert-info" style="display: block;">Click "RUN OFFICIAL 9-CASE BENCHMARK" to execute the full matrix using Qiskit Aer.</div>
+
+                <div id="bench-results-table-container" style="overflow-x: auto;">
+                    <table class="bench-table" id="bench-table">
+                        <thead>
+                            <tr>
+                                <th>Topology</th>
+                                <th>Condition</th>
+                                <th>Fidelity</th>
+                                <th>&lt;XX&gt;</th>
+                                <th>&lt;YY&gt;</th>
+                                <th>&lt;ZZ&gt;</th>
+                                <th>SWAPs</th>
+                                <th>2Q Gates</th>
+                                <th>DAG Depth</th>
+                                <th>Survival Yield</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bench-tbody">
+                            <tr><td colspan="10" style="color: var(--text-muted); padding: 20px;">Benchmark matrix will populate after execution.</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
-            <div class="card">
-                <h2>Routed Qiskit QuantumCircuit</h2>
-                <pre id="circuit-box" class="circuit-box">Qiskit QuantumCircuit diagram will appear here...</pre>
+            <!-- Key Comparison Charts -->
+            <div class="card" id="bench-charts-card" style="display: none;">
+                <h2>Key Comparison Visualizations</h2>
+                <div class="charts-grid">
+                    <div class="plot-container">
+                        <h3 style="color:#0f172a; font-size:13px; margin-bottom:8px;">1. Remote Bell-State Fidelity: Ideal vs Noisy vs Protected</h3>
+                        <img id="chart-fid" src="" alt="Fidelity Comparison">
+                    </div>
+                    <div class="plot-container">
+                        <h3 style="color:#0f172a; font-size:13px; margin-bottom:8px;">2. Routing Gate Overhead (SWAPs & 2Q Gates)</h3>
+                        <img id="chart-gates" src="" alt="Routing Overhead Comparison">
+                    </div>
+                    <div class="plot-container">
+                        <h3 style="color:#0f172a; font-size:13px; margin-bottom:8px;">3. Routed Quantum Circuit Depth</h3>
+                        <img id="chart-depth" src="" alt="Circuit Depth Comparison">
+                    </div>
+                    <div class="plot-container">
+                        <h3 style="color:#0f172a; font-size:13px; margin-bottom:8px;">4. Protection Recovery vs Survival Yield</h3>
+                        <img id="chart-prot" src="" alt="Protection Performance">
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -967,6 +1386,25 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
             "Heavy-Hex Inspired": { num_q: 14, src: 0, dst: 6 },
             "Hyperbolic Inspired": { num_q: 16, src: 6, dst: 11 }
         };
+
+        function switchTab(tab) {
+            const viewCustom = document.getElementById("view-custom");
+            const viewBench = document.getElementById("view-benchmark");
+            const btnCustom = document.getElementById("tab-custom-btn");
+            const btnBench = document.getElementById("tab-bench-btn");
+
+            if (tab === "custom") {
+                viewCustom.style.display = "grid";
+                viewBench.style.display = "none";
+                btnCustom.classList.add("active");
+                btnBench.classList.remove("active");
+            } else {
+                viewCustom.style.display = "none";
+                viewBench.style.display = "block";
+                btnCustom.classList.remove("active");
+                btnBench.classList.add("active");
+            }
+        }
 
         function onTopologyChange() {
             const topo = document.getElementById("topo-select").value;
@@ -1031,7 +1469,6 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
                 statusAlert.innerText = `✔ Simulation succeeded! Bell Fidelity: ${data.fidelity.toFixed(4)}`;
                 statusAlert.style.display = "block";
 
-                // Update UI Metrics
                 document.getElementById("fid-val").innerText = data.fidelity.toFixed(4);
                 document.getElementById("hops-val").innerText = data.hops;
                 document.getElementById("swaps-val").innerText = data.swaps;
@@ -1059,7 +1496,7 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
                 }
 
             } catch (err) {
-                errAlert.innerText = "Network/Execution error: " + err.message;
+                errAlert.innerText = "Execution error: " + err.message;
                 errAlert.style.display = "block";
             } finally {
                 runBtn.disabled = false;
@@ -1067,7 +1504,76 @@ WEB_HTML_TEMPLATE = r"""<!DOCTYPE html>
             }
         }
 
-        // Initialize on page load and trigger first run
+        async function runOfficialBenchmark() {
+            const alertBox = document.getElementById("bench-alert");
+            const btn = document.getElementById("bench-run-btn");
+            const tbody = document.getElementById("bench-tbody");
+            const chartsCard = document.getElementById("bench-charts-card");
+
+            btn.disabled = true;
+            btn.innerText = "⏳ Executing 9-Case Benchmark Matrix...";
+            alertBox.className = "alert alert-info";
+            alertBox.style.display = "block";
+            alertBox.innerText = "Running genuine Qiskit Aer simulations across 3 topologies × 3 conditions (20,000 shots per basis)...";
+
+            try {
+                const response = await fetch("/api/benchmark", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ shots: 20000, seed: 42 })
+                });
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    alertBox.className = "alert alert-error";
+                    alertBox.innerText = data.error || "Benchmark execution failed.";
+                    return;
+                }
+
+                alertBox.className = "alert alert-success";
+                alertBox.innerText = "✔ Official 9-Case Benchmark completed! Live simulations finished and plots generated.";
+
+                tbody.innerHTML = "";
+                data.results.forEach(row => {
+                    const tr = document.createElement("tr");
+                    let badgeClass = "badge-ideal";
+                    if (row.Condition === "Noisy") badgeClass = "badge-noisy";
+                    if (row.Condition === "Noisy + Protection") badgeClass = "badge-protected";
+
+                    const yieldStr = (row.Condition === "Noisy + Protection") ? (row["Survival Yield"] * 100).toFixed(1) + "%" : "100.0%";
+
+                    tr.innerHTML = `
+                        <td style="font-weight:600; text-align:left;">${row.Topology}</td>
+                        <td><span class="${badgeClass}">${row.Condition}</span></td>
+                        <td style="font-weight:700; color:#fff;">${row.Fidelity.toFixed(4)}</td>
+                        <td>${(row.XX > 0 ? "+" : "") + row.XX.toFixed(4)}</td>
+                        <td>${(row.YY > 0 ? "+" : "") + row.YY.toFixed(4)}</td>
+                        <td>${(row.ZZ > 0 ? "+" : "") + row.ZZ.toFixed(4)}</td>
+                        <td>${row.SWAPs}</td>
+                        <td>${row["2Q Gates"]}</td>
+                        <td>${row.Depth}</td>
+                        <td style="font-weight:600; color:#4ade80;">${yieldStr}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                if (data.charts) {
+                    chartsCard.style.display = "block";
+                    if (data.charts.fidelity) document.getElementById("chart-fid").src = "data:image/png;base64," + data.charts.fidelity;
+                    if (data.charts.gates) document.getElementById("chart-gates").src = "data:image/png;base64," + data.charts.gates;
+                    if (data.charts.depth) document.getElementById("chart-depth").src = "data:image/png;base64," + data.charts.depth;
+                    if (data.charts.protection) document.getElementById("chart-prot").src = "data:image/png;base64," + data.charts.protection;
+                }
+
+            } catch (err) {
+                alertBox.className = "alert alert-error";
+                alertBox.innerText = "Network/Execution error: " + err.message;
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "▶ RUN OFFICIAL 9-CASE BENCHMARK";
+            }
+        }
+
         window.addEventListener("DOMContentLoaded", () => {
             onTopologyChange();
             runSimulation();
@@ -1115,7 +1621,6 @@ def run_web_server(port: int = 5000, open_browser: bool = True) -> None:
                     condition = payload.get("condition", "Noisy")
                     shots = payload.get("shots", 20000)
 
-                    # Validate inputs
                     is_valid, err_msg, custom_topo, valid_shots = validate_demo_inputs(
                         topology_name=topology,
                         source_val=source,
@@ -1132,7 +1637,6 @@ def run_web_server(port: int = 5000, open_browser: bool = True) -> None:
                         self.wfile.write(json.dumps(resp).encode("utf-8"))
                         return
 
-                    # Execute simulation
                     res = simulate_demo(
                         topology_name=topology,
                         source=int(source),
@@ -1142,7 +1646,6 @@ def run_web_server(port: int = 5000, open_browser: bool = True) -> None:
                         seed=42,
                     )
 
-                    # Generate plot base64
                     plot_b64 = render_topology_base64(custom_topo)
 
                     resp_data = {
@@ -1177,19 +1680,54 @@ def run_web_server(port: int = 5000, open_browser: bool = True) -> None:
                     self.end_headers()
                     resp = {"success": False, "error": str(ex)}
                     self.wfile.write(json.dumps(resp).encode("utf-8"))
+
+            elif self.path == "/api/benchmark":
+                # Execute genuine official 9-case benchmark matrix
+                content_len = int(self.headers.get("Content-Length", 0))
+                post_body = self.rfile.read(content_len).decode("utf-8") if content_len > 0 else "{}"
+                try:
+                    payload = json.loads(post_body) if post_body else {}
+                    shots = payload.get("shots", 20000)
+                    seed = payload.get("seed", 42)
+
+                    df, geom, comp = run_official_benchmark_demo(shots=shots, seed=seed)
+
+                    charts_data = {
+                        "fidelity": get_benchmark_plot_base64("fidelity_comparison.png"),
+                        "gates": get_benchmark_plot_base64("swap_count_comparison.png"),
+                        "depth": get_benchmark_plot_base64("circuit_depth_comparison.png"),
+                        "protection": get_benchmark_plot_base64("protection_yield_fidelity.png"),
+                    }
+
+                    resp_data = {
+                        "success": True,
+                        "results": df.to_dict(orient="records"),
+                        "charts": charts_data,
+                    }
+
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(resp_data).encode("utf-8"))
+
+                except Exception as ex:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    resp = {"success": False, "error": str(ex)}
+                    self.wfile.write(json.dumps(resp).encode("utf-8"))
+
             else:
                 self.send_response(404)
                 self.end_headers()
 
         def log_message(self, format, *args):
-            # Suppress routine HTTP log spam in console
             pass
 
     server_address = ("127.0.0.1", port)
     try:
         httpd = HTTPServer(server_address, DemoRequestHandler)
     except OSError:
-        # Port might be in use; try port + 1
         port = port + 1
         server_address = ("127.0.0.1", port)
         httpd = HTTPServer(server_address, DemoRequestHandler)
@@ -1209,7 +1747,7 @@ def run_web_server(port: int = 5000, open_browser: bool = True) -> None:
 
 
 # ==============================================================================
-# 3. TERMINAL / CLI IMPLEMENTATION
+# TERMINAL / CLI IMPLEMENTATION
 # ==============================================================================
 
 def print_result_summary(res: DemoResult) -> None:
@@ -1238,15 +1776,35 @@ def print_result_summary(res: DemoResult) -> None:
     print("=" * 60)
 
 
+def print_official_benchmark_summary(df: pd.DataFrame) -> None:
+    """Prints the official 9-case benchmark matrix formatted to console."""
+    print("\n" + "=" * 80)
+    print("                 Live Qiskit Aer Benchmark - 9 Cases")
+    print("                 Powered by Qiskit SDK + Qiskit Aer")
+    print("=" * 80)
+    print(df.to_string(index=False))
+    print("=" * 80)
+
+
 def run_cli_interactive() -> None:
     """Interactive command-line mode for terminal environments."""
-    topos = get_all_topologies()
-    names = list(topos.keys())
-
     print("\n" + "=" * 60)
     print("    Q-GeoRoute - Quantum Routing Simulator (Terminal CLI)")
     print("    Powered by Qiskit SDK + Qiskit Aer")
     print("=" * 60)
+    print("\nSelect Mode:")
+    print("  1. Custom Simulation (Select Topology, Endpoints, Condition, Shots)")
+    print("  2. Official 9-Case Benchmark (Live Qiskit Aer Benchmark — 9 Cases)")
+
+    m_choice = input("Enter choice [1-2] (default 1): ").strip()
+    if m_choice == "2":
+        print("\n[*] Executing Live Qiskit Aer Benchmark (9 Cases, 20,000 shots per basis)...")
+        df, _, _ = run_official_benchmark_demo(shots=20000, seed=42)
+        print_official_benchmark_summary(df)
+        return
+
+    topos = get_all_topologies()
+    names = list(topos.keys())
 
     print("\nSelect Topology:")
     for idx, name in enumerate(names, 1):
@@ -1311,14 +1869,15 @@ def run_cli_interactive() -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Q-GeoRoute Interactive Quantum Routing Simulator (Powered by Qiskit Aer)",
+        description="Q-GeoRoute Interactive Quantum Routing Simulator & Benchmark (Powered by Qiskit Aer)",
     )
-    parser.add_argument("--web", "-w", action="store_true", help="Launch the browser-based Web Simulator")
+    parser.add_argument("--web", "-w", action="store_true", help="Launch the browser-based Web Simulator & Benchmark")
     parser.add_argument("--cli", "-c", action="store_true", help="Launch interactive CLI prompt")
+    parser.add_argument("--benchmark", "-b", action="store_true", help="Run the Live Official 9-Case Benchmark directly")
     parser.add_argument("--port", type=int, default=5000, help="Port for web server (default: 5000)")
     parser.add_argument("--no-browser", action="store_true", help="Do not open browser automatically in web mode")
 
-    # Command-line direct run arguments
+    # Command-line direct run arguments for custom mode
     parser.add_argument("--topology", "-t", type=str, default=None, help="Topology name: '5Q Star', 'Heavy-Hex Inspired', 'Hyperbolic Inspired'")
     parser.add_argument("--source", "-s", type=int, default=None, help="Source qubit ID")
     parser.add_argument("--target", "-d", type=int, default=None, help="Target qubit ID")
@@ -1327,7 +1886,15 @@ def main():
 
     args = parser.parse_args()
 
-    # 1. Direct one-shot CLI execution
+    # 1. Official 9-case benchmark directly from demo
+    if args.benchmark:
+        print("\n[*] Launching Official 9-Case Benchmark via demo.py...")
+        df, _, _ = run_official_benchmark_demo(shots=args.shots, seed=42)
+        print_official_benchmark_summary(df)
+        print("\n[OK] Benchmark completed. Results saved to 'results/benchmark_results.csv' and plots to 'results/plots/'.")
+        return
+
+    # 2. Direct one-shot custom CLI execution
     if args.topology is not None:
         topos = get_all_topologies()
         if args.topology not in topos:
@@ -1347,21 +1914,20 @@ def main():
         print_result_summary(res)
         return
 
-    # 2. Interactive Terminal mode
+    # 3. Interactive Terminal mode
     if args.cli:
         run_cli_interactive()
         return
 
-    # 3. Web mode
+    # 4. Web mode
     if args.web:
         run_web_server(port=args.port, open_browser=not args.no_browser)
         return
 
-    # 4. Default: Desktop GUI (Tkinter), with fallback to Web if GUI display is not available
+    # 5. Default: Desktop GUI (Tkinter), with fallback to Web if GUI display is not available
     try:
         run_gui()
     except Exception as ex:
-        # Graceful fallback if DISPLAY or Tkinter windowing fails
         print(f"\n[!] Note: Desktop GUI could not be initialized ({ex}).")
         print("[*] Launching local Web Simulator fallback instead...")
         run_web_server(port=args.port, open_browser=not args.no_browser)
