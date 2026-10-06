@@ -142,6 +142,15 @@ class TestDemo(unittest.TestCase):
         self.assertTrue(os.path.exists(test_csv))
         os.remove(test_csv)
 
+    def test_np_is_defined_in_demo_scope(self):
+        """Verify that numpy is imported as np in src.demo and available for benchmark charts."""
+        import src.demo as demo
+        self.assertTrue(hasattr(demo, "np"))
+        self.assertIsNotNone(demo.np)
+        # Verify np.arange works as expected by chart renderers
+        arr = demo.np.arange(3)
+        self.assertEqual(len(arr), 3)
+
 
 if __name__ == "__main__":
     unittest.main()
